@@ -42,7 +42,8 @@ python3 -m vie --check
 python3 -m vie AAPL
 ```
 
-The report is written to `reports/AAPL_<date>_report.md`. A run takes a minute
+The report is written to `reports/AAPL_<date>_report.md`. Add `--pdf` for a
+PDF copy. A run takes a minute
 or two, because it makes two Claude calls.
 
 ## Command line options
@@ -51,6 +52,7 @@ or two, because it makes two Claude calls.
 |---|---|
 | `TICKER` | Company to research, e.g. `AAPL`, `BRK-B`, `DGE.L` |
 | `--output-dir DIR` | Where to write the report (default `reports/`) |
+| `--pdf` | Also write a PDF copy of the report |
 | `--json` | Also write the validated JSON next to the report |
 | `--min FIELD=VALUE` | Pre-commit a minimum score before the run, e.g. `--min confidence=7`. Repeatable. The report carries a review flag if the result falls below it |
 | `--model NAME` | Claude model alias (default `sonnet`, or set `VIE_MODEL`) |

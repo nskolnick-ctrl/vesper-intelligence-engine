@@ -116,3 +116,25 @@ def test_write_report_raises_report_write_error_when_path_is_a_file(tmp_path: Pa
 
     with pytest.raises(ReportWriteError, match="Could not write"):
         write_report(_output(), blocker, REPORT_DATE)
+
+
+# --- PDF output --------------------------------------------------------------
+
+
+def test_render_pdf_produces_a_pdf_even_with_non_latin1_text():
+    from src.output import render_pdf
+
+    output = _output(primary_risk="P/E ≈ 38x — stretched ≥ peers → risk")
+    content = render_pdf(render_report(output, REPORT_DATE))
+
+    assert content.startswith(b"%PDF")
+    assert len(content) > 1000
+
+
+def test_write_pdf_report_uses_dated_pdf_filename(tmp_path: Path):
+    from src.output import write_pdf_report
+
+    path = write_pdf_report(_output(), tmp_path, REPORT_DATE)
+
+    assert path.name == "AAPL_2026-09-16_report.pdf"
+    assert path.read_bytes().startswith(b"%PDF")

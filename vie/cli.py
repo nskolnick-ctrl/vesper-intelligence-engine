@@ -24,7 +24,7 @@ from src.analysis import (
 from src.analysis.engine import DEFAULT_MODEL
 from src.analysis.schema import ANALYSIS_FIELDS
 from src.data import DataFetchError, DataValidationError
-from src.output import ReportWriteError, write_report
+from src.output import ReportWriteError, write_pdf_report, write_report
 from src.pipeline import PipelineConversionError, PipelineOutput, run_pipeline_full
 
 EXIT_OK = 0
@@ -83,6 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Also write the validated JSON output next to the report",
+    )
+    parser.add_argument(
+        "--pdf",
+        action="store_true",
+        help="Also write a PDF copy of the report",
     )
     parser.add_argument(
         "--check",
@@ -247,6 +252,8 @@ def main(argv: Sequence[str] | None = None, runner: PipelineRunner = run_pipelin
         output = runner(ticker, override_thresholds=thresholds, model=args.model)
         report_path = write_report(output, args.output_dir)
 
+        pdf_path = write_pdf_report(output, args.output_dir) if args.pdf else None
+
         if args.json:
             json_path = report_path.with_suffix(".json")
             try:
@@ -266,6 +273,8 @@ def main(argv: Sequence[str] | None = None, runner: PipelineRunner = run_pipelin
 
     result = output.result
     print(f"Report written to {report_path}")
+    if pdf_path is not None:
+        print(f"PDF written to {pdf_path}")
     print(f"Verdict: {result.verdict.replace('_', ' ')} (confidence {result.confidence}/10)")
     if output.breaches:
         print("Review flag: result fell below a pre-committed minimum. See the report.")

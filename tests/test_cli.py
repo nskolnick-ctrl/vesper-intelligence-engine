@@ -63,6 +63,13 @@ def test_json_flag_writes_valid_json(tmp_path: Path):
     assert json.loads(json_file.read_text())["analysis"]["verdict"] == "high_quality"
 
 
+def test_pdf_flag_writes_pdf_next_to_report(tmp_path: Path, capsys):
+    assert main(["AAPL", "--output-dir", str(tmp_path), "--pdf"], runner=_fake_runner) == 0
+    [pdf_file] = tmp_path.glob("AAPL_*_report.pdf")
+    assert pdf_file.read_bytes().startswith(b"%PDF")
+    assert "PDF written to" in capsys.readouterr().out
+
+
 def test_invalid_ticker_exits_1_without_traceback(tmp_path: Path, capsys):
     runner = MagicMock()
     code = main(["INVALID_TICKER_XYZ", "--output-dir", str(tmp_path)], runner=runner)
