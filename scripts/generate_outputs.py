@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import json
 import sys
+import warnings
 from pathlib import Path
 
+warnings.filterwarnings("ignore", message=".*OpenSSL.*")  # macOS LibreSSL notice
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.pipeline import run_analysis  # noqa: E402
