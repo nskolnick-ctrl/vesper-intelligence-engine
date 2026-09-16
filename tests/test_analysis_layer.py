@@ -1,7 +1,7 @@
 """Tests for the VIE analysis layer (src/analysis/).
 
-Every test constructs a fake client with `.messages.create` mocked, so
-none of these tests need ANTHROPIC_API_KEY or network access — the
+Every test constructs a fake client with `.complete` mocked, so
+none of these tests start Claude Code or need network access — the
 "public interface only" rule from the Day 5 test file applies here
 too. At least one adversarial case per the Day 6 requirement is
 present: malformed JSON, a markdown-fenced response, a missing
@@ -12,7 +12,6 @@ Run with: pytest tests/test_analysis_layer.py
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -52,13 +51,9 @@ VALID_BEAR_JSON = (
 
 
 def _client_returning(text: str) -> MagicMock:
-    """Build a mock Anthropic client whose .messages.create(...) returns
-    a response object shaped like the real SDK's, with `text` as the
-    sole content block.
-    """
+    """Build a fake Claude client whose .complete(...) returns `text`."""
     client = MagicMock()
-    block = SimpleNamespace(type="text", text=text)
-    client.messages.create.return_value = SimpleNamespace(content=[block])
+    client.complete.return_value = text
     return client
 
 
@@ -74,7 +69,7 @@ def test_run_analysis_happy_path():
     assert result.verdict == "high_quality"
     assert result.moat_score == 8
     assert result.caveats == []
-    client.messages.create.assert_called_once()
+    client.complete.assert_called_once()
 
 
 # --- adversarial: markdown code fences (the actual Day 3 AAPL failure) -----
@@ -133,7 +128,7 @@ def test_run_analysis_invalid_enum_raises_schema_error():
 
 def test_run_analysis_api_failure_raises_analysis_api_error():
     client = MagicMock()
-    client.messages.create.side_effect = ConnectionError("boom")
+    client.complete.side_effect = ConnectionError("boom")
 
     with pytest.raises(AnalysisAPIError, match="boom"):
         run_analysis({"ticker": "AAPL"}, client=client)
@@ -148,7 +143,7 @@ def test_run_bear_case_prompt_contains_only_data_not_prior_result():
 
     run_bear_case(data, client=client)
 
-    sent_prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    sent_prompt = client.complete.call_args.kwargs["user_prompt"]
     assert "0.46" in sent_prompt
     # Nothing from a prior AnalysisResult (e.g. a verdict string) should
     # ever be interpolated into the bear case prompt.
@@ -255,9 +250,9 @@ def test_run_full_analysis_flags_precommitted_threshold_breach():
     # second call -> bear case, worded to trigger the override downgrade,
     # which does not change confidence, so the confidence threshold is
     # unaffected in this scenario.
-    client.messages.create.side_effect = [
-        SimpleNamespace(content=[SimpleNamespace(type="text", text=VALID_ANALYSIS_JSON)]),
-        SimpleNamespace(content=[SimpleNamespace(type="text", text=VALID_BEAR_JSON)]),
+    client.complete.side_effect = [
+        VALID_ANALYSIS_JSON,
+        VALID_BEAR_JSON,
     ]
 
     result, breaches = run_full_analysis(
@@ -274,9 +269,9 @@ def test_run_full_analysis_records_breach_below_threshold():
     thresholds = {"moat_score": 9}  # fixture's moat_score is 8
 
     client = MagicMock()
-    client.messages.create.side_effect = [
-        SimpleNamespace(content=[SimpleNamespace(type="text", text=VALID_ANALYSIS_JSON)]),
-        SimpleNamespace(content=[SimpleNamespace(type="text", text=VALID_BEAR_JSON)]),
+    client.complete.side_effect = [
+        VALID_ANALYSIS_JSON,
+        VALID_BEAR_JSON,
     ]
 
     _, breaches = run_full_analysis(

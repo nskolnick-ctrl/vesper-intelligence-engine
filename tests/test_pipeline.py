@@ -91,12 +91,12 @@ def _fake_company_data(**overrides) -> FakeCompanyData:
 
 
 def _client_with_responses(*texts: str) -> MagicMock:
-    """Mock Anthropic client returning `texts` in order across successive
-    .messages.create(...) calls (main analysis call, then bear case call).
+    """Fake Claude client returning `texts` in order across successive
+    .complete(...) calls (main analysis call, then bear case call).
     """
     client = MagicMock()
-    client.messages.create.side_effect = [
-        SimpleNamespace(content=[SimpleNamespace(type="text", text=t)]) for t in texts
+    client.complete.side_effect = [
+        t for t in texts
     ]
     return client
 
@@ -162,9 +162,7 @@ def test_run_pipeline_happy_path():
     # Confirm the data actually crossed the seam: the rendered prompt
     # sent to the mocked client should contain a real field value from
     # the fake CompanyData, not a placeholder.
-    sent_prompt = client.messages.create.call_args_list[0].kwargs["messages"][0][
-        "content"
-    ]
+    sent_prompt = client.complete.call_args_list[0].kwargs["user_prompt"]
     assert "0.46" in sent_prompt  # gross_margin
 
 
