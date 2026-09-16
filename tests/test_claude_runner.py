@@ -45,6 +45,7 @@ def test_complete_returns_result_text(found):
     assert command[command.index("--model") + 1] == "sonnet"
     assert command[command.index("--system-prompt") + 1] == "system"
     assert command[command.index("--output-format") + 1] == "json"
+    assert command[command.index("--tools") + 1] == ""  # no tools: text answer only
 
 
 def test_complete_never_passes_api_credentials(found, monkeypatch):

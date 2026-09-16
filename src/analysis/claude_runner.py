@@ -26,6 +26,9 @@ from src.analysis.exceptions import AnalysisAPIError
 
 CLAUDE_PATH_ENV_VAR = "VIE_CLAUDE_PATH"
 DEFAULT_TIMEOUT_SECONDS = 300
+# Tools are switched off (--tools ""), so the model can only answer in text.
+# A small turn allowance leaves headroom without letting a run wander.
+MAX_TURNS = 3
 INSTALL_HINT = (
     "Install Claude Code (https://claude.com/claude-code), run `claude` once "
     "in a terminal to log in, then try again. If it is installed somewhere "
@@ -95,8 +98,9 @@ class ClaudeCodeClient:
         The call runs in an empty temporary directory so no project files or
         CLAUDE.md from wherever the VIE was launched leak into the context,
         with the VIE system prompt replacing Claude Code's default one, and
-        limited to a single turn so the model answers from the prompt alone
-        rather than starting to use tools.
+        with every tool disabled so the model answers from the prompt alone.
+        Without that, Claude Code's tools stay available and the model can
+        spend its turns on them, which ends the run with error_max_turns.
 
         Args:
             system_prompt (str): System prompt for this call.
@@ -122,8 +126,10 @@ class ClaudeCodeClient:
             model,
             "--system-prompt",
             system_prompt,
+            "--tools",
+            "",
             "--max-turns",
-            "1",
+            str(MAX_TURNS),
         ]
         env = {k: v for k, v in os.environ.items() if k not in _API_CREDENTIAL_ENV_VARS}
 
