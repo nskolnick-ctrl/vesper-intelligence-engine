@@ -136,8 +136,43 @@ def _strip_code_fences(text: str) -> str:
     return stripped
 
 
+def _extract_last_json_object(text: str) -> dict[str, Any] | None:
+    """Find the last complete top-level JSON object inside mixed text.
+
+    The Day 3 analysis template asks the model to write out its reasoning
+    for each step before giving the JSON. Claude sometimes does exactly
+    that, so the reply is prose followed by the object. This scans left to
+    right, decodes every complete object it can, skips over its contents,
+    and returns the last one, which is the final answer.
+
+    Args:
+        text (str): Reply text that may contain prose around the JSON.
+
+    Returns:
+        dict[str, Any] | None: The last top-level object, or None if the
+        text contains no decodable object.
+    """
+    decoder = json.JSONDecoder()
+    last: dict[str, Any] | None = None
+    index = text.find("{")
+    while index != -1:
+        try:
+            value, end = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            index = text.find("{", index + 1)
+            continue
+        if isinstance(value, dict):
+            last = value
+        index = text.find("{", end)
+    return last
+
+
 def _parse_json(raw_text: str, context: str) -> dict[str, Any]:
-    """Parse raw model text as JSON, stripping one wrapping code fence first.
+    """Parse the model reply as JSON.
+
+    Tries, in order: the whole reply, the reply with one wrapping code fence
+    removed, then the last complete JSON object found inside the reply (for
+    replies that put step-by-step reasoning before the JSON).
 
     Args:
         raw_text (str): Reply text from Claude.
@@ -147,19 +182,19 @@ def _parse_json(raw_text: str, context: str) -> dict[str, Any]:
         dict[str, Any]: The parsed JSON value (validated by the caller).
 
     Raises:
-        ResponseParsingError: If the text is not valid JSON even after
-            stripping a code fence.
+        ResponseParsingError: If no JSON object can be recovered.
     """
     candidate = _strip_code_fences(raw_text)
     try:
-        parsed = json.loads(candidate)
+        return json.loads(candidate)
     except json.JSONDecodeError as exc:
+        recovered = _extract_last_json_object(raw_text)
+        if recovered is not None:
+            return recovered
         raise ResponseParsingError(
-            f"{context}: model response was not valid JSON after stripping "
-            f"code fences. json error: {exc}. Raw response (truncated): "
-            f"{raw_text[:300]!r}"
+            f"{context}: model response contained no valid JSON object. "
+            f"json error: {exc}. Raw response (truncated): {raw_text[:300]!r}"
         ) from exc
-    return parsed
 
 
 def run_analysis(

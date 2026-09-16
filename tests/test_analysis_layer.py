@@ -84,6 +84,25 @@ def test_run_analysis_strips_markdown_fences():
     assert result.verdict == "high_quality"
 
 
+# --- adversarial: reasoning written before the JSON (seen live on AAPL) -----
+
+
+def test_run_analysis_recovers_json_after_step_by_step_reasoning():
+    reply = (
+        "**Step 1 - Business model:** sector is {Technology}.\n\n"
+        "**Step 4 - Synthesis:** moderate.\n\n"
+        f"```json\n{VALID_ANALYSIS_JSON}\n```\nDone."
+    )
+    result = run_analysis({"ticker": "AAPL"}, client=_client_returning(reply))
+
+    assert result.verdict == "high_quality"
+
+
+def test_run_analysis_prose_only_still_raises_parsing_error():
+    with pytest.raises(ResponseParsingError, match="no valid JSON"):
+        run_analysis({"ticker": "AAPL"}, client=_client_returning("I cannot do this."))
+
+
 # --- adversarial: malformed JSON --------------------------------------------
 
 
