@@ -9,6 +9,13 @@ so the user sees an informative message and a non-zero exit code, never a
 Python traceback.
 """
 
-from vie.cli import main
+import warnings
+
+# macOS system Python links an old LibreSSL, and urllib3 (pulled in by
+# yfinance) warns about it on import. It does not affect the VIE. This runs
+# here, not in __main__.py, because the package is imported first.
+warnings.filterwarnings("ignore", message=".*OpenSSL.*")
+
+from vie.cli import main  # noqa: E402
 
 __all__ = ["main"]
