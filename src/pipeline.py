@@ -11,8 +11,8 @@ Data flow (Day 1 architecture): ticker in, CompanyData out of the data
 layer, dict out of company_data_to_dict, AnalysisResult out of the
 analysis layer. Each stage only ever sees the previous stage's
 validated output. This module does not catch exceptions from either
-layer — per the Day 1 architecture note, the CLI (not yet built; Day
-8) is the sole layer permitted to catch all exceptions. A pipeline
+layer, per the Day 1 architecture note: the CLI (vie/cli.py) is the
+sole layer permitted to catch all exceptions. A pipeline
 that swallowed errors here would hide exactly the failures the two
 layers were built to surface.
 """
@@ -20,11 +20,14 @@ layers were built to surface.
 from __future__ import annotations
 
 import dataclasses
+import json
+from dataclasses import dataclass, field
 from typing import Any
 
-from src.analysis import run_full_analysis
+from src.analysis import run_full_analysis, run_full_analysis_with_bear_case
+from src.analysis.claude_runner import ClaudeClient
 from src.analysis.engine import DEFAULT_MODEL, OverrideThresholdBreach
-from src.analysis.schema import AnalysisResult
+from src.analysis.schema import AnalysisResult, BearCaseResult
 from src.data import fetch_company_data
 
 
@@ -90,7 +93,7 @@ def company_data_to_dict(data: Any) -> dict[str, Any]:
 def run_pipeline(
     ticker: str,
     override_thresholds: dict[str, int] | None = None,
-    client: Any | None = None,
+    client: ClaudeClient | None = None,
     model: str = DEFAULT_MODEL,
 ) -> tuple[AnalysisResult, list[OverrideThresholdBreach]]:
     """Run the full VIE pipeline for one ticker: fetch, convert, analyse.
@@ -100,7 +103,7 @@ def run_pipeline(
         override_thresholds: Minimum acceptable values for integer
             result fields, fixed before this call runs (see the Day 6
             pre-commitment mechanism in src/analysis/engine.py).
-        client: Anthropic-SDK-shaped client, or None for the default.
+        client: Claude client, or None to use the local Claude Code login.
         model: Model identifier to call.
 
     Returns:
@@ -122,3 +125,120 @@ def run_pipeline(
     return run_full_analysis(
         data_dict, override_thresholds=override_thresholds, client=client, model=model
     )
+
+
+@dataclass
+class PipelineOutput:
+    """Everything one pipeline run produced, in one object.
+
+    Attributes:
+        data (dict[str, Any]): The data layer snapshot the analysis used.
+        result (AnalysisResult): The final verdict after any bear case
+            downgrade.
+        bear_case (BearCaseResult): The independent bear case.
+        breaches (list[OverrideThresholdBreach]): Pre-committed thresholds
+            the result fell below.
+        model (str): Model alias or identifier used for the Claude calls.
+    """
+
+    data: dict[str, Any]
+    result: AnalysisResult
+    bear_case: BearCaseResult
+    breaches: list[OverrideThresholdBreach] = field(default_factory=list)
+    model: str = DEFAULT_MODEL
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict of the whole run.
+
+        Returns:
+            dict[str, Any]: Keys analysis, bear_case, override_breaches,
+            input_data and model.
+        """
+        return {
+            "analysis": self.result.as_dict(),
+            "bear_case": dataclasses.asdict(self.bear_case),
+            "override_breaches": [dataclasses.asdict(b) for b in self.breaches],
+            "input_data": self.data,
+            "model": self.model,
+        }
+
+    def to_json(self) -> str:
+        """Serialise the run to an indented JSON string.
+
+        Returns:
+            str: Valid JSON.
+        """
+        return json.dumps(self.as_dict(), indent=2, default=str)
+
+
+def run_pipeline_full(
+    ticker: str,
+    override_thresholds: dict[str, int] | None = None,
+    client: ClaudeClient | None = None,
+    model: str = DEFAULT_MODEL,
+) -> PipelineOutput:
+    """Run the pipeline and keep every intermediate the report needs.
+
+    Args:
+        ticker (str): The company ticker to research.
+        override_thresholds (dict[str, int] | None): Pre-committed minimum
+            values for integer result fields.
+        client (ClaudeClient | None): Claude client, or None to use the local
+            Claude Code login.
+        model (str): Model alias or identifier.
+
+    Returns:
+        PipelineOutput: Data snapshot, verdict, bear case and breaches.
+
+    Raises:
+        DataFetchError: If the ticker cannot be fetched.
+        DataValidationError: If fetched data fails validation.
+        PipelineConversionError: If the data layer output cannot be converted.
+        AnalysisAPIError: If a Claude call fails.
+        ResponseParsingError: If a reply is not valid JSON.
+        SchemaValidationError: If a reply fails schema validation.
+    """
+    company_data = fetch_company_data(ticker)
+    data_dict = company_data_to_dict(company_data)
+    result, bear_case, breaches = run_full_analysis_with_bear_case(
+        data_dict, override_thresholds=override_thresholds, client=client, model=model
+    )
+    return PipelineOutput(
+        data=data_dict, result=result, bear_case=bear_case, breaches=breaches, model=model
+    )
+
+
+def run_analysis(
+    ticker: str,
+    override_thresholds: dict[str, int] | None = None,
+    client: ClaudeClient | None = None,
+    model: str = DEFAULT_MODEL,
+) -> str:
+    """Run the full pipeline for one ticker and return the result as JSON.
+
+    This is the one-call entry point: ``run_analysis("AAPL")`` fetches the
+    data, runs both Claude calls through the local Claude Code login, and
+    returns validated JSON.
+
+    Args:
+        ticker (str): The company ticker to research.
+        override_thresholds (dict[str, int] | None): Pre-committed minimum
+            values for integer result fields.
+        client (ClaudeClient | None): Claude client, or None for the default.
+        model (str): Model alias or identifier.
+
+    Returns:
+        str: JSON with keys analysis, bear_case, override_breaches,
+        input_data and model.
+
+    Raises:
+        DataFetchError: If the ticker cannot be fetched.
+        DataValidationError: If fetched data fails validation.
+        PipelineConversionError: If the data layer output cannot be converted.
+        AnalysisAPIError: If a Claude call fails.
+        ResponseParsingError: If a reply is not valid JSON.
+        SchemaValidationError: If a reply fails schema validation.
+    """
+    return run_pipeline_full(
+        ticker, override_thresholds=override_thresholds, client=client, model=model
+    ).to_json()

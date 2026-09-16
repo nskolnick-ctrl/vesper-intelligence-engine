@@ -209,3 +209,33 @@ def test_run_pipeline_forwards_override_thresholds():
 
     assert len(breaches) == 1
     assert breaches[0].field == "moat_score"
+
+
+# --- run_analysis: one-call JSON entry point ----------------------------------
+
+
+def test_run_analysis_returns_valid_json_with_bear_case():
+    import json
+
+    from src.pipeline import run_analysis
+
+    client = _client_with_responses(VALID_ANALYSIS_JSON, VALID_BEAR_JSON)
+    with patch("src.pipeline.fetch_company_data", return_value=_fake_company_data()):
+        output = run_analysis("AAPL", client=client)
+
+    parsed = json.loads(output)
+    assert parsed["analysis"]["ticker"] == "AAPL"
+    assert parsed["bear_case"]["bear_thesis"] == "Margin could compress."
+    assert parsed["input_data"]["gross_margin"] == 0.46
+    assert parsed["override_breaches"] == []
+
+
+def test_run_pipeline_full_keeps_bear_case_and_breaches():
+    from src.pipeline import run_pipeline_full
+
+    client = _client_with_responses(VALID_ANALYSIS_JSON, VALID_BEAR_JSON)
+    with patch("src.pipeline.fetch_company_data", return_value=_fake_company_data()):
+        output = run_pipeline_full("AAPL", override_thresholds={"moat_score": 9}, client=client)
+
+    assert output.bear_case.what_would_change_this == "A downturn test."
+    assert output.breaches[0].actual == 8
