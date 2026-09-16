@@ -1,0 +1,47 @@
+{
+  "analysis": {
+    "ticker": "TSLA",
+    "analysis_date": "2026-09-16",
+    "business_model_clarity": 6,
+    "moat_score": 3,
+    "moat_primary_source": "none",
+    "moat_evidence": "EBIT margin of only 1.41% despite $103.6B revenue and 25.5% YoY growth suggests no currently realized cost advantage or efficient scale. No data provided on market share, brand loyalty, patents, or contractual lock-in to support any of the five moat categories.",
+    "financial_quality": 6,
+    "financial_evidence": "Cash ($43.5B) far exceeds total debt ($16.1B) and FCF is positive ($4.8B), showing balance sheet strength. However, EBIT margin of just 1.41% versus 18.85% gross margin signals weak operating efficiency despite strong 25.5% revenue growth.",
+    "primary_risk": "Profitability is not scaling with revenue: EBIT margin is only 1.41% despite 25.5% YoY growth, while the $1.44T market cap trades at 340x trailing earnings, implying valuation prices in margin expansion not evidenced in current data.",
+    "verdict": "low_quality",
+    "confidence": 4,
+    "caveats": [
+      "Sector field ('Consumer Cyclical') provides no competitive or market-share detail needed for a reliable moat determination.",
+      "No data on debt maturity, interest coverage, or debt composition limits assessment of balance sheet risk beyond gross cash-vs-debt comparison.",
+      "Extremely high trailing P/E (340x) is inconsistent with the thin 1.41% EBIT margin, and this valuation risk is not reflected in the financial_quality score."
+    ]
+  },
+  "bear_case": {
+    "bear_thesis": "TSLA trades at 340x trailing earnings and ~13.9x revenue despite EBIT margin of just 1.41%. The market is pricing a mature, high-margin tech/auto leader, but the fundamentals show a thin-margin manufacturer generating almost no operating profit relative to its scale.",
+    "key_evidence": "EBIT margin 1.41%; gross margin 18.85% (thin for a 'premium' automaker); FCF TTM $4.84B against $1.44T market cap (~0.34% FCF yield); PE of 340x implies decades of current earnings to justify price.",
+    "bull_assumption_challenged": "Bulls must assume margins reaccelerate sharply toward historical (~20%+ EBIT) levels via robotaxi/FSD/energy optionality, but none of that is visible here\u2014this data shows only auto-like thin margins with no segment breakdown supporting a software/AI re-rating.",
+    "what_would_change_this": "Visible evidence of margin expansion trend (rising EBIT/gross margin over multiple quarters) or disclosed high-margin segment (robotaxi/FSD/energy) revenue contribution\u2014neither is present in this snapshot."
+  },
+  "override_breaches": [],
+  "input_data": {
+    "ticker": "TSLA",
+    "company_name": "Tesla, Inc.",
+    "sector": "Consumer Cyclical",
+    "price": 363.8825,
+    "market_cap": 1437171318784.0,
+    "fifty_two_week_low": 297.38,
+    "fifty_two_week_high": 498.83,
+    "revenue_ttm": 103619002368.0,
+    "revenue_growth_yoy": 0.255,
+    "gross_margin": 0.18852,
+    "ebit_margin": 0.014099999,
+    "total_debt": 16080000000.0,
+    "cash_and_equivalents": 43524001792.0,
+    "free_cash_flow_ttm": 4835999744.0,
+    "pe_ratio_trailing": 340.0771,
+    "as_of_date": "2026-09-16",
+    "source": "yfinance"
+  },
+  "model": "sonnet"
+}

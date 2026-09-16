@@ -1,0 +1,47 @@
+{
+  "analysis": {
+    "ticker": "KO",
+    "analysis_date": "2026-09-16",
+    "business_model_clarity": 9,
+    "moat_score": 6,
+    "moat_primary_source": "intangible_assets",
+    "moat_evidence": "High gross (61.9%) and EBIT (34.9%) margins imply strong brand/pricing power typical of intangible-asset moats; however, no direct brand valuation, market share, or competitive benchmark data is provided to confirm strength or durability.",
+    "financial_quality": 6,
+    "financial_evidence": "Strong margins (gross 61.9%, EBIT 34.9%) indicate profitability, but total debt ($44.26B) exceeds cash ($16.37B) by ~$27.9B net debt, and FCF ttm ($5.22B) is modest relative to revenue ($50.1B), limiting balance-sheet certainty.",
+    "primary_risk": "Net debt (~$27.9B, total_debt $44.26B minus cash $16.37B) combined with modest FCF ttm ($5.22B) constrains debt-servicing and deleveraging capacity given the company's leveraged balance sheet.",
+    "verdict": "low_quality",
+    "confidence": 5,
+    "caveats": [
+      "Moat evaluation relies on margin proxy, not direct brand/market-share data.",
+      "No net income, interest coverage, or debt-to-EBITDA fields provided to fully assess leverage risk.",
+      "FCF ttm appears low relative to margin profile and revenue scale, unexplained by data provided."
+    ]
+  },
+  "bear_case": {
+    "bear_thesis": "KO trades near its 52-week high at 26.65x earnings while generating only $5.2B FCF on $50.1B revenue (~10.4% FCF margin) despite a 34.9% EBIT margin \u2014 a valuation demanding premium execution the cash generation doesn't currently confirm.",
+    "key_evidence": "Free cash flow ($5.22B) is drastically smaller than EBIT margin (34.9%) implies; FCF yield on market cap is just ~1.4%. Net debt (~$27.9B after cash) is over 5x TTM FCF, while revenue growth is a modest 6.7%.",
+    "bull_assumption_challenged": "Bulls must assume the EBIT-to-FCF gap is transient (capex/working-capital timing) and that pricing power sustains growth above 6.7% \u2014 the data shows no reconciliation, capex detail, or margin trend to justify that assumption.",
+    "what_would_change_this": "Evidence that depressed FCF reflects a one-time item (e.g., bottler restructuring, tax timing) with normalized FCF and margin trends confirming durable conversion above the 10% level shown."
+  },
+  "override_breaches": [],
+  "input_data": {
+    "ticker": "KO",
+    "company_name": "The Coca-Cola Company",
+    "sector": "Consumer Defensive",
+    "price": 88.225,
+    "market_cap": 379592376320.0,
+    "fifty_two_week_low": 65.35,
+    "fifty_two_week_high": 92.49,
+    "revenue_ttm": 50128998400.0,
+    "revenue_growth_yoy": 0.067,
+    "gross_margin": 0.61888003,
+    "ebit_margin": 0.34873,
+    "total_debt": 44260999168.0,
+    "cash_and_equivalents": 16371000320.0,
+    "free_cash_flow_ttm": 5218749952.0,
+    "pe_ratio_trailing": 26.65408,
+    "as_of_date": "2026-09-16",
+    "source": "yfinance"
+  },
+  "model": "sonnet"
+}
