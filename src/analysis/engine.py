@@ -1,8 +1,11 @@
-"""Claude API integration for the VIE analysis layer.
+"""Claude integration for the VIE analysis layer.
+
+Claude is reached through the user's own Claude Code login (see
+claude_runner.py). No Anthropic API key is used anywhere.
 
 Data flow (Day 1 architecture): this module receives the Day 5 data
 layer's validated object, never raw external data, and returns only a
-schema-validated AnalysisResult, never a raw API response. It never
+schema-validated AnalysisResult, never a raw model response. It never
 imports from src.data directly — the public functions take a plain
 dict (the data object's fields) so this layer depends on the shape of
 the data, not on where it came from, per the Day 5 note on the data
@@ -31,16 +34,18 @@ module:
    that this decides what would justify an override only after the
    output exists. run_full_analysis's signature forces the opposite
    order: override_thresholds must be supplied by the caller before
-   the API call is made, so the condition for overriding the tool is
+   the Claude call is made, so the condition for overriding the tool is
    fixed before there is an output for it to be fitted to.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, replace
 from typing import Any, Callable
 
+from src.analysis.claude_runner import ClaudeClient, ClaudeCodeClient
 from src.analysis.exceptions import (
     AnalysisAPIError,
     ResponseParsingError,
@@ -58,86 +63,52 @@ from src.analysis.schema import (
     validate_bear_case_output,
 )
 
-# Configurable via env var so this can be updated without a code change
-# as Anthropic's available models change; a low, fixed temperature is
-# used for both calls per the Day 1 correction that repeated,
-# same-number-expected tasks call for low temperature, not variety.
-DEFAULT_MODEL = "claude-sonnet-5"
-DEFAULT_TEMPERATURE = 0.0
-DEFAULT_MAX_TOKENS = 1024
+# The model is chosen by alias so it follows whatever Claude models the
+# user's account has, and can be overridden with VIE_MODEL without a code
+# change. Claude Code does not expose a temperature setting, so the Day 1
+# low-temperature choice cannot be pinned here; repeatability is instead
+# enforced after the call, by strict JSON parsing and schema validation.
+DEFAULT_MODEL = os.environ.get("VIE_MODEL", "sonnet")
 
 VERDICT_ORDER = ["insufficient_data", "low_quality", "moderate_quality", "high_quality"]
 
 
-def _get_anthropic_client() -> Any:
-    """Lazily import and construct the default Anthropic client.
-
-    Imported inside the function, not at module load, so a caller
-    that always supplies its own client (as every test in this
-    package does) never needs the `anthropic` package installed just
-    to import this module.
-    """
-    import anthropic  # requires: pip install anthropic
-
-    return anthropic.Anthropic()
-
-
 def _call_claude(
-    client: Any,
+    client: ClaudeClient,
     model: str,
     system_prompt: str,
     user_prompt: str,
-    temperature: float,
-    max_tokens: int,
 ) -> str:
-    """Make one Claude API call and return the raw text response.
+    """Make one Claude call and return the raw text reply.
 
     Args:
-        client: An object exposing `.messages.create(...)` matching
-            the Anthropic SDK's interface. Passed explicitly (not
-            constructed here) so tests can substitute a mock.
-        model: Model identifier to call.
-        system_prompt: The system prompt for this call.
-        user_prompt: The rendered user-turn prompt for this call.
-        temperature: Sampling temperature.
-        max_tokens: Maximum tokens to generate.
+        client (ClaudeClient): Object exposing ``complete(system_prompt,
+            user_prompt, model)``. Passed explicitly so tests can substitute
+            a fake.
+        model (str): Model alias or identifier.
+        system_prompt (str): The system prompt for this call.
+        user_prompt (str): The rendered user prompt for this call.
 
     Returns:
-        str: the concatenated text of the response's content blocks.
+        str: The reply text.
 
     Raises:
-        AnalysisAPIError: if the API call raises any exception, or
-            returns a response with no text content.
+        AnalysisAPIError: If the call fails for any reason, or the reply is
+            not a non-empty string.
     """
     try:
-        response = client.messages.create(
-            model=model,
-            system=system_prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=[{"role": "user", "content": user_prompt}],
+        text = client.complete(
+            system_prompt=system_prompt, user_prompt=user_prompt, model=model
         )
-    except Exception as exc:  # noqa: BLE001 - deliberately broad: any
-        # transport, auth, rate-limit, or timeout failure is the same
-        # failure mode from this layer's point of view.
-        raise AnalysisAPIError(
-            f"Claude API call failed for model '{model}': {exc}"
-        ) from exc
+    except AnalysisAPIError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - any failure in the client is
+        # the same failure mode from this layer's point of view.
+        raise AnalysisAPIError(f"Claude call failed for model '{model}': {exc}") from exc
 
-    try:
-        text_blocks = [block.text for block in response.content if block.type == "text"]
-    except AttributeError as exc:
-        raise AnalysisAPIError(
-            "Claude API returned a response with an unexpected shape "
-            "(no .content list of typed blocks)."
-        ) from exc
-
-    if not text_blocks:
-        raise AnalysisAPIError(
-            "Claude API response contained no text content blocks."
-        )
-
-    return "".join(text_blocks)
+    if not isinstance(text, str) or not text.strip():
+        raise AnalysisAPIError(f"Claude returned an empty reply for model '{model}'.")
+    return text
 
 
 def _strip_code_fences(text: str) -> str:
@@ -146,10 +117,13 @@ def _strip_code_fences(text: str) -> str:
     The prompt (OUTPUT_SCHEMA_SPEC) already says "no markdown code
     fences" by name, which is the Day 3 fix for the AAPL run that
     came back wrapped in triple backticks. This function is a second,
-    independent line of defence: if the model still fences the
-    response, strip one pair of fences before attempting to parse,
-    rather than failing on output that is otherwise perfectly valid
-    JSON.
+    independent line of defence.
+
+    Args:
+        text (str): Raw reply text.
+
+    Returns:
+        str: The text with one wrapping fence removed, if present.
     """
     stripped = text.strip()
     if stripped.startswith("```"):
@@ -165,8 +139,15 @@ def _strip_code_fences(text: str) -> str:
 def _parse_json(raw_text: str, context: str) -> dict[str, Any]:
     """Parse raw model text as JSON, stripping one wrapping code fence first.
 
+    Args:
+        raw_text (str): Reply text from Claude.
+        context (str): Name of the calling step, for the error message.
+
+    Returns:
+        dict[str, Any]: The parsed JSON value (validated by the caller).
+
     Raises:
-        ResponseParsingError: if the text is not valid JSON even after
+        ResponseParsingError: If the text is not valid JSON even after
             stripping a code fence.
     """
     candidate = _strip_code_fences(raw_text)
@@ -183,68 +164,64 @@ def _parse_json(raw_text: str, context: str) -> dict[str, Any]:
 
 def run_analysis(
     data: dict[str, Any],
-    client: Any | None = None,
+    client: ClaudeClient | None = None,
     model: str = DEFAULT_MODEL,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> AnalysisResult:
     """Run the main chain-of-thought analysis and return a validated result.
 
     Args:
-        data: The Day 5 data layer object's fields, as a plain dict
-            (e.g. from `dataclasses.asdict(company_data)`).
-        client: Anthropic-SDK-shaped client. If None, a default client
-            reading ANTHROPIC_API_KEY from the environment is
-            constructed.
-        model: Model identifier to call. Defaults to DEFAULT_MODEL.
-        temperature: Sampling temperature. Defaults to 0.0.
-        max_tokens: Maximum tokens to generate.
+        data (dict[str, Any]): The data layer object's fields as a plain dict.
+        client (ClaudeClient | None): Claude client. If None, a
+            ClaudeCodeClient using the local Claude Code login is used.
+        model (str): Model alias or identifier. Defaults to DEFAULT_MODEL.
 
     Returns:
-        AnalysisResult: the validated 12-field verdict.
+        AnalysisResult: The validated 12-field verdict.
 
     Raises:
-        AnalysisAPIError: if the API call fails.
-        ResponseParsingError: if the response is not valid JSON.
-        SchemaValidationError: if the parsed JSON fails schema
-            validation.
+        AnalysisAPIError: If the Claude call fails.
+        ResponseParsingError: If the reply is not valid JSON.
+        SchemaValidationError: If the parsed JSON fails schema validation.
     """
-    active_client = client if client is not None else _get_anthropic_client()
+    active_client = client if client is not None else ClaudeCodeClient()
     data_json = json.dumps(data, sort_keys=True, default=str)
     prompt = render_analysis_prompt(data_json)
 
-    raw_text = _call_claude(
-        active_client, model, SYSTEM_PROMPT, prompt, temperature, max_tokens
-    )
+    raw_text = _call_claude(active_client, model, SYSTEM_PROMPT, prompt)
     parsed = _parse_json(raw_text, context="run_analysis")
     return validate_analysis_output(parsed)
 
 
 def run_bear_case(
     data: dict[str, Any],
-    client: Any | None = None,
+    client: ClaudeClient | None = None,
     model: str = DEFAULT_MODEL,
-    temperature: float = DEFAULT_TEMPERATURE,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> BearCaseResult:
     """Run the independent bear case analysis and return a validated result.
 
     Deliberately takes only `data`, never an AnalysisResult: the Day 3
     rationale for this call is that it must not see the first pass's
     own output, or the bear case risks becoming a rationalisation of a
-    verdict the model already committed to rather than an independent
-    second path to the same data.
+    verdict the model already committed to.
 
-    Args, Returns, Raises: as run_analysis, but for the 4-field bear
-    case schema.
+    Args:
+        data (dict[str, Any]): The data layer object's fields as a plain dict.
+        client (ClaudeClient | None): Claude client, or None for the default.
+        model (str): Model alias or identifier.
+
+    Returns:
+        BearCaseResult: The validated 4-field bear case.
+
+    Raises:
+        AnalysisAPIError: If the Claude call fails.
+        ResponseParsingError: If the reply is not valid JSON.
+        SchemaValidationError: If the parsed JSON fails schema validation.
     """
-    active_client = client if client is not None else _get_anthropic_client()
+    active_client = client if client is not None else ClaudeCodeClient()
     data_json = json.dumps(data, sort_keys=True, default=str)
     prompt = render_bear_case_prompt(data_json)
 
-    raw_text = _call_claude(
-        active_client, model, SYSTEM_PROMPT, prompt, temperature, max_tokens
-    )
+    raw_text = _call_claude(active_client, model, SYSTEM_PROMPT, prompt)
     parsed = _parse_json(raw_text, context="run_bear_case")
     return validate_bear_case_output(parsed)
 
@@ -361,7 +338,7 @@ def _check_override_thresholds(
             "moat_score") to the minimum acceptable value, decided by
             the caller before run_full_analysis was invoked — the
             signature of run_full_analysis (this argument is consumed
-            before the API call, never after) is what makes the
+            before the Claude call, never after) is what makes the
             decision "pre-committed" rather than fitted to the output
             in hindsight.
 
@@ -385,10 +362,46 @@ def _check_override_thresholds(
     return breaches
 
 
+def run_full_analysis_with_bear_case(
+    data: dict[str, Any],
+    override_thresholds: dict[str, int] | None = None,
+    client: ClaudeClient | None = None,
+    model: str = DEFAULT_MODEL,
+) -> tuple[AnalysisResult, BearCaseResult, list[OverrideThresholdBreach]]:
+    """Run the full analysis and also return the bear case for reporting.
+
+    Same pipeline as run_full_analysis. The bear case is returned as well
+    so the output layer can show the reader the strongest argument against
+    the verdict, not just whether it caused a downgrade.
+
+    Args:
+        data (dict[str, Any]): The data layer object's fields as a plain dict.
+        override_thresholds (dict[str, int] | None): Minimum acceptable
+            values for integer result fields, fixed before any call is made.
+        client (ClaudeClient | None): Claude client, or None for the default.
+        model (str): Model alias or identifier for both calls.
+
+    Returns:
+        tuple[AnalysisResult, BearCaseResult, list[OverrideThresholdBreach]]:
+        The final result, the bear case, and any threshold breaches.
+
+    Raises:
+        AnalysisAPIError: If a Claude call fails.
+        ResponseParsingError: If a reply is not valid JSON.
+        SchemaValidationError: If a reply fails schema validation.
+    """
+    active_client = client if client is not None else ClaudeCodeClient()
+    bull_result = run_analysis(data, client=active_client, model=model)
+    bear_result = run_bear_case(data, client=active_client, model=model)
+    final_result = apply_bear_case_override(bull_result, bear_result)
+    breaches = _check_override_thresholds(final_result, override_thresholds)
+    return final_result, bear_result, breaches
+
+
 def run_full_analysis(
     data: dict[str, Any],
     override_thresholds: dict[str, int] | None = None,
-    client: Any | None = None,
+    client: ClaudeClient | None = None,
     model: str = DEFAULT_MODEL,
 ) -> tuple[AnalysisResult, list[OverrideThresholdBreach]]:
     """Run the full Day 6 analysis layer pipeline for one company.
@@ -399,27 +412,25 @@ def run_full_analysis(
     (correction 2).
 
     Args:
-        data: The Day 5 data layer object's fields, as a plain dict.
-        override_thresholds: Minimum acceptable values for integer
-            result fields, fixed by the caller before this function
-            runs and therefore before any output exists to fit them
+        data (dict[str, Any]): The data layer object's fields as a plain dict.
+        override_thresholds (dict[str, int] | None): Minimum acceptable
+            values for integer result fields, fixed by the caller before this
+            function runs and therefore before any output exists to fit them
             to. Pass None to skip this check.
-        client: Anthropic-SDK-shaped client, or None for the default.
-        model: Model identifier to call for both API calls.
+        client (ClaudeClient | None): Claude client, or None for the default.
+        model (str): Model alias or identifier for both calls.
 
     Returns:
-        tuple[AnalysisResult, list[OverrideThresholdBreach]]: the
-        final result (after any bear-case downgrade) and the list of
-        any pre-committed thresholds it breached, so the caller can
-        decide what to do with a breach without this layer making
-        that judgement call for them.
+        tuple[AnalysisResult, list[OverrideThresholdBreach]]: The final
+        result (after any bear-case downgrade) and any pre-committed
+        thresholds it breached.
 
     Raises:
-        AnalysisAPIError, ResponseParsingError, SchemaValidationError:
-            as run_analysis / run_bear_case.
+        AnalysisAPIError: If a Claude call fails.
+        ResponseParsingError: If a reply is not valid JSON.
+        SchemaValidationError: If a reply fails schema validation.
     """
-    bull_result = run_analysis(data, client=client, model=model)
-    bear_result = run_bear_case(data, client=client, model=model)
-    final_result = apply_bear_case_override(bull_result, bear_result)
-    breaches = _check_override_thresholds(final_result, override_thresholds)
+    final_result, _, breaches = run_full_analysis_with_bear_case(
+        data, override_thresholds=override_thresholds, client=client, model=model
+    )
     return final_result, breaches

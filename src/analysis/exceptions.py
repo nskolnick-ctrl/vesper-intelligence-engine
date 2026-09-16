@@ -11,11 +11,13 @@ from __future__ import annotations
 
 
 class AnalysisAPIError(Exception):
-    """Raised when the Claude API call itself fails.
+    """Raised when the Claude call itself fails.
 
-    Covers network failures, timeouts, authentication errors, and
-    rate limits: anything where the model never produced a response
-    for this layer to work with. The original exception is chained
+    Claude is reached through the user's own Claude Code login, not the
+    Anthropic API. Covers Claude Code not being installed, not being
+    logged in, timeouts, usage limits, and network failures: anything
+    where the model never produced a response for this layer to work
+    with. The original exception is chained
     (`raise ... from exc`) so the underlying cause is never lost.
     """
 

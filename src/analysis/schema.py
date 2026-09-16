@@ -77,7 +77,7 @@ class AnalysisResult:
     """The validated 12-field main verdict, as a typed object.
 
     Constructed only by `validate_analysis_output`; never built
-    directly from a raw API response, per the Day 6 critical design
+    directly from a raw model response, per the Day 6 critical design
     requirement that raw responses never reach the caller unvalidated.
     """
 
