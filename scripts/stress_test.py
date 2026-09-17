@@ -136,9 +136,9 @@ def run_case(
         notes={
             "missing_inputs": missing,
             "models_used": sorted({m for c in calls for m in c.get("models_used", [])}),
-            "downgraded_by_bear_case": any(
-                "contests the evidence" in c for c in output.result.caveats
-            ),
+            "downgraded_by_bear_case": bool(output.bear_override and output.bear_override.applied),
+            "original_verdict": output.bear_override.original_verdict if output.bear_override else "",
+            "bear_severity": output.bear_case.bear_case_severity,
         },
     )
 
@@ -163,7 +163,11 @@ def results_rows(results: List[StressResult]) -> List[Dict[str, Any]]:
             "Confidence": res.confidence if res else "",
             "Moat score": (res.moat_score if res.moat_score is not None else "null") if res else "",
             "Missing inputs": ", ".join(r.notes.get("missing_inputs", [])) or ("none" if r.succeeded else ""),
-            "Bear downgrade": ("Yes" if r.notes.get("downgraded_by_bear_case") else "No") if r.succeeded else "",
+            "Bear severity": r.notes.get("bear_severity", "") if r.succeeded else "",
+            "Bear downgrade": (
+                f"Yes (from {r.notes.get('original_verdict', '').replace('_', ' ')})"
+                if r.notes.get("downgraded_by_bear_case") else "No"
+            ) if r.succeeded else "",
             "Seconds": r.seconds,
             "Error": r.error,
             "Why chosen": r.case.why,
@@ -196,7 +200,7 @@ def write_results(results: List[StressResult], output_dir: Path = OUTPUT_DIR) ->
     successes = sum(r.succeeded for r in results)
     gate = "MET" if successes >= GATE_MIN_SUCCESSES else "NOT MET"
     headers = ["Ticker", "Category", "Succeeded", "Verdict", "Confidence", "Moat score",
-               "Missing inputs", "Bear downgrade", "Seconds", "Error"] + RUBRIC_COLUMNS
+               "Missing inputs", "Bear severity", "Bear downgrade", "Seconds", "Error"] + RUBRIC_COLUMNS
     lines = [
         f"# VIE Stress Test Results ({stamp})",
         "",

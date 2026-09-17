@@ -27,7 +27,7 @@ def _fake_output(ticker: str) -> PipelineOutput:
             financial_evidence="Thin margins.", primary_risk="Losses.", verdict="low_quality",
             confidence=3, caveats=[],
         ),
-        bear_case=BearCaseResult("Burning cash.", "Negative margin.", "That losses narrow.", "Profit."),
+        bear_case=BearCaseResult("Burning cash.", "Negative margin.", "That losses narrow.", "Profit.", 4),
     )
 
 
