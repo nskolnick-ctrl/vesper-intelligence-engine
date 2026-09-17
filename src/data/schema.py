@@ -1,7 +1,7 @@
 """The clean company data object produced by the VIE data layer.
 
-These 17 fields are the canonical VIE Data Layer Schema fixed in the Day 2
-design. A field that cannot be sourced is set to None, never to a default of
+The first 17 fields are the canonical VIE Data Layer Schema fixed in the Day 2
+design. Two currency fields were added on Day 9 after stress testing. A field that cannot be sourced is set to None, never to a default of
 zero, because a false zero is silently indistinguishable from a genuine zero
 once the object reaches the analysis layer.
 """
@@ -46,6 +46,13 @@ class CompanyData:
             negative earnings is a real value rather than an error.
         as_of_date (str): ISO date the snapshot was taken.
         source (str): Name of the data source, recorded for provenance.
+        currency (Optional[str]): Currency the share price is quoted in, as
+            the source reports it. "GBp" means pence, not pounds. Day 9
+            addition, found when the Barclays run showed a price of 472.80
+            with no indication it was in pence.
+        financial_currency (Optional[str]): Currency the financial statement
+            figures (revenue, debt, cash, free cash flow) are reported in.
+            Can differ from ``currency``. Day 9 addition.
     """
 
     ticker: str
@@ -65,3 +72,5 @@ class CompanyData:
     pe_ratio_trailing: Optional[float]
     as_of_date: str
     source: str
+    currency: Optional[str] = None
+    financial_currency: Optional[str] = None

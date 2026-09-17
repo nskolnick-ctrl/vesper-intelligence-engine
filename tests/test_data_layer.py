@@ -229,3 +229,40 @@ def test_stale_snapshot_warns_but_still_returns(source, caplog):
 
     assert isinstance(data, CompanyData)
     assert any("trading days old" in record.message for record in caplog.records)
+
+
+def test_zero_gross_margin_with_positive_operating_margin_becomes_none(source):
+    """Day 9: a bank-style 0.0 gross margin that contradicts EBIT is treated as missing."""
+    payload = _complete_info()
+    payload["sector"] = "Financial Services"
+    payload["grossMargins"] = 0.0
+    payload["operatingMargins"] = 0.43
+    source(payload)
+
+    data = fetch_company_data("BARC.L")
+
+    assert data.gross_margin is None
+    assert data.ebit_margin == pytest.approx(0.43)
+
+
+def test_zero_gross_margin_kept_when_operating_margin_not_positive(source):
+    """A zero gross margin alongside a loss is possible, so it is preserved."""
+    payload = _complete_info()
+    payload["grossMargins"] = 0.0
+    payload["operatingMargins"] = -0.2
+    source(payload)
+
+    assert fetch_company_data("EXI.L").gross_margin == 0
+
+
+def test_currency_fields_are_captured(source):
+    """Day 9: price and statement currencies are recorded so pence can be labelled."""
+    payload = _complete_info()
+    payload["currency"] = "GBp"
+    payload["financialCurrency"] = "GBP"
+    source(payload)
+
+    data = fetch_company_data("EXI.L")
+
+    assert data.currency == "GBp"
+    assert data.financial_currency == "GBP"

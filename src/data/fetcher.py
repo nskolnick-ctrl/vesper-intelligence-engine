@@ -15,6 +15,7 @@ it catches a stale snapshot, not a stale value sitting behind a current date.
 """
 
 import logging
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -75,7 +76,10 @@ def fetch_company_data(ticker: str) -> CompanyData:
         pe_ratio_trailing=_optional_float(info, "trailingPE"),
         as_of_date=as_of_date,
         source=SOURCE_NAME,
+        currency=_optional_str(info, "currency"),
+        financial_currency=_optional_str(info, "financialCurrency"),
     )
+    data = _drop_implausible_zero_gross_margin(data)
 
     _validate(data)
     _warn_if_stale(data)
@@ -242,6 +246,35 @@ def _resolve_as_of_date(info: Dict[str, Any], ticker: str) -> str:
         SOURCE_NAME,
     )
     return date.today().isoformat()
+
+
+def _drop_implausible_zero_gross_margin(data: CompanyData) -> CompanyData:
+    """Treat a zero gross margin as missing when it cannot be real.
+
+    Operating (EBIT) profit is what remains of gross profit after operating
+    costs, so a company cannot have a positive EBIT margin and a gross margin of
+    exactly zero. The source returns 0.0 when it has no gross margin figure,
+    which happens for banks and insurers because they do not report cost of
+    goods sold. Found in the Day 9 stress test: Barclays came back with a 0.0%
+    gross margin alongside a 43% operating margin, and the analysis treated the
+    zero as real. A zero that contradicts the operating margin is replaced with
+    None, keeping the Day 5 rule that a missing value is never a false zero.
+
+    Args:
+        data (CompanyData): The assembled snapshot.
+
+    Returns:
+        CompanyData: The same snapshot, or a copy with gross_margin set to None.
+    """
+    if data.gross_margin == 0 and data.ebit_margin is not None and data.ebit_margin > 0:
+        logger.warning(
+            "%s reported a 0.0 gross margin with a positive operating margin of %.3f. "
+            "That combination is impossible, so gross_margin is treated as missing.",
+            data.ticker,
+            data.ebit_margin,
+        )
+        return replace(data, gross_margin=None)
+    return data
 
 
 def _validate(data: CompanyData) -> None:
