@@ -68,6 +68,7 @@ def test_report_shows_plain_language_verdict_and_scores():
     assert "Intangible assets (brand, patents, licences)" in report
     assert "high_quality" not in report  # no raw enum values
     assert "46.0%" in report and "3.5T" in report and "391.0B" in report
+    assert "Framework warning" not in report
 
 
 def test_report_never_shows_null_as_zero_or_blank():
@@ -138,3 +139,37 @@ def test_write_pdf_report_uses_dated_pdf_filename(tmp_path: Path):
 
     assert path.name == "AAPL_2026-09-16_report.pdf"
     assert path.read_bytes().startswith(b"%PDF")
+
+
+# --- Day 9: currency, financial sector, audit footer --------------------------
+
+
+def test_report_labels_pence_and_statement_currency():
+    output = _output()
+    output.data.update(price=472.8, currency="GBp", financial_currency="GBP", revenue_ttm=28_100_000_000.0)
+
+    report = render_report(output, REPORT_DATE)
+
+    assert "| Share price | 472.80 pence (GBp) |" in report
+    assert "28.1B GBP" in report
+
+
+def test_report_warns_for_financial_sector():
+    output = _output()
+    output.data["sector"] = "Financial Services"
+
+    assert "Framework warning" in render_report(output, REPORT_DATE)
+
+
+def test_report_footer_shows_model_run_time_and_hashes():
+    output = _output()
+    output.run_metadata = {
+        "run_at": "2026-09-17T09:00:00+00:00",
+        "claude_calls": [{"models_used": ["claude-sonnet-x"], "response_sha256": "a" * 64}],
+    }
+
+    report = render_report(output, REPORT_DATE)
+
+    assert "sonnet (claude-sonnet-x)" in report
+    assert "run at 2026-09-17T09:00:00+00:00" in report
+    assert "reply hashes aaaaaaaaaa" in report

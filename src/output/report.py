@@ -44,6 +44,10 @@ MOAT_LABELS = {
     "none": "No clear moat",
 }
 
+FINANCIAL_SECTORS = frozenset({"Financial Services"})
+
+CURRENCY_NAMES = {"GBp": "pence", "GBX": "pence", "ZAc": "cents", "ILA": "agorot"}
+
 FIELD_LABELS = {
     "confidence": "Confidence",
     "moat_score": "Competitive advantage (moat) score",
@@ -64,22 +68,41 @@ def _score(value: int | None) -> str:
     return NOT_ASSESSED if value is None else f"{value} / 10"
 
 
-def _money(value: Any) -> str:
-    """Format a large amount in the company's reporting currency.
+def _money(value: Any, currency: str | None = None) -> str:
+    """Format a large amount, labelled with its currency where known.
 
     Args:
         value (Any): Number or None.
+        currency (str | None): Currency code such as "GBP", or None.
 
     Returns:
-        str: For example "391.0B", or "Not available".
+        str: For example "391.0B USD", or "Not available".
     """
     if value is None:
         return NOT_AVAILABLE
     amount = float(value)
+    suffix_currency = f" {currency}" if currency else ""
     for divisor, suffix in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
         if abs(amount) >= divisor:
-            return f"{amount / divisor:,.1f}{suffix}"
-    return f"{amount:,.0f}"
+            return f"{amount / divisor:,.1f}{suffix}{suffix_currency}"
+    return f"{amount:,.0f}{suffix_currency}"
+
+
+def _price(value: Any, currency: str | None) -> str:
+    """Format a share price, spelling out minor units such as pence.
+
+    Args:
+        value (Any): Price or None.
+        currency (str | None): Quote currency, for example "USD" or "GBp".
+
+    Returns:
+        str: For example "472.80 pence (GBp)" or "333.83 USD".
+    """
+    if value is None:
+        return NOT_AVAILABLE
+    if currency in CURRENCY_NAMES:
+        return f"{float(value):,.2f} {CURRENCY_NAMES[currency]} ({currency})"
+    return f"{float(value):,.2f}" + (f" {currency}" if currency else "")
 
 
 def _percent(value: Any) -> str:
@@ -131,6 +154,7 @@ def render_report(output: PipelineOutput, generated_on: date | None = None) -> s
     """
     generated_on = generated_on or date.today()
     data, result, bear = output.data, output.result, output.bear_case
+    fin_ccy = data.get("financial_currency")
     name = data.get("company_name") or result.ticker
     verdict_label = VERDICT_LABELS.get(result.verdict, result.verdict)
     moat_source = (
@@ -152,6 +176,15 @@ def render_report(output: PipelineOutput, generated_on: date | None = None) -> s
         VERDICT_EXPLANATIONS.get(result.verdict, ""),
         "",
     ]
+
+    if data.get("sector") in FINANCIAL_SECTORS:
+        lines += [
+            "> **Framework warning.** This is a financial company. The VIE's measures "
+            "(gross margin, total debt, free cash flow) are built for industrial "
+            "businesses. For a bank or insurer, customer deposits count as debt and "
+            "gross margin is not reported, so treat this verdict as unreliable.",
+            "",
+        ]
 
     if result.caveats:
         lines += ["**Read this verdict with these caveats:**", ""]
@@ -207,22 +240,23 @@ def render_report(output: PipelineOutput, generated_on: date | None = None) -> s
         "",
         "## Key figures used",
         "",
-        "Amounts are in the company's reporting currency. \"Not available\" means the "
-        "data source did not supply the figure; it has not been treated as zero.",
+        "Large amounts are shown in the currency the company reports its accounts in. "
+        "\"Not available\" means the data source did not supply the figure; it has "
+        "not been treated as zero.",
         "",
         "| Figure | Value |",
         "|---|---|",
         f"| Sector | {data.get('sector') or NOT_AVAILABLE} |",
-        f"| Share price | {_number(data.get('price'))} |",
-        f"| Market capitalisation | {_money(data.get('market_cap'))} |",
+        f"| Share price | {_price(data.get('price'), data.get('currency'))} |",
+        f"| Market capitalisation | {_money(data.get('market_cap'), fin_ccy)} |",
         f"| 52-week range | {_number(data.get('fifty_two_week_low'))} to {_number(data.get('fifty_two_week_high'))} |",
-        f"| Revenue (last 12 months) | {_money(data.get('revenue_ttm'))} |",
+        f"| Revenue (last 12 months) | {_money(data.get('revenue_ttm'), fin_ccy)} |",
         f"| Revenue growth (year on year) | {_percent(data.get('revenue_growth_yoy'))} |",
         f"| Gross margin | {_percent(data.get('gross_margin'))} |",
         f"| Operating (EBIT) margin | {_percent(data.get('ebit_margin'))} |",
-        f"| Free cash flow (last 12 months) | {_money(data.get('free_cash_flow_ttm'))} |",
-        f"| Total debt | {_money(data.get('total_debt'))} |",
-        f"| Cash and equivalents | {_money(data.get('cash_and_equivalents'))} |",
+        f"| Free cash flow (last 12 months) | {_money(data.get('free_cash_flow_ttm'), fin_ccy)} |",
+        f"| Total debt | {_money(data.get('total_debt'), fin_ccy)} |",
+        f"| Cash and equivalents | {_money(data.get('cash_and_equivalents'), fin_ccy)} |",
         f"| Price to earnings (trailing) | {_number(data.get('pe_ratio_trailing'), 1)} |",
         "",
         "## How to read this report",
@@ -233,10 +267,33 @@ def render_report(output: PipelineOutput, generated_on: date | None = None) -> s
         "data source would not be detected. Treat it as a starting point for "
         "research, not a recommendation to buy or sell.",
         "",
-        f"*Analysis model: {output.model}*",
+        _run_footer(output),
         "",
     ]
     return "\n".join(lines)
+
+
+def _run_footer(output: PipelineOutput) -> str:
+    """Build the audit footer: model, run time and reply hashes.
+
+    Args:
+        output (PipelineOutput): The pipeline run.
+
+    Returns:
+        str: One italic markdown line.
+    """
+    meta = output.run_metadata or {}
+    calls = meta.get("claude_calls") or []
+    parts = [f"Analysis model: {output.model}"]
+    used = sorted({m for c in calls for m in c.get("models_used", [])})
+    if used:
+        parts[0] += f" ({', '.join(used)})"
+    if meta.get("run_at"):
+        parts.append(f"run at {meta['run_at']}")
+    hashes = [c.get("response_sha256", "")[:10] for c in calls if c.get("response_sha256")]
+    if hashes:
+        parts.append(f"reply hashes {', '.join(hashes)}")
+    return "*" + " | ".join(parts) + "*"
 
 
 def report_filename(ticker: str, generated_on: date) -> str:
