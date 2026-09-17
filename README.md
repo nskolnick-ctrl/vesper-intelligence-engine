@@ -76,7 +76,7 @@ unless you pass `--debug`.
 
 `src/analysis/claude_runner.py` runs Claude Code in headless mode
 (`claude -p ... --output-format json`) in an empty temporary directory, with the
-VIE system prompt and a single turn. It removes every `ANTHROPIC_` variable from the
+VIE system prompt and all tools switched off. It removes every `ANTHROPIC_` variable from the
 environment it passes on, so a stray key in your shell can never be billed.
 If Claude Code is somewhere unusual, set `VIE_CLAUDE_PATH`.
 
