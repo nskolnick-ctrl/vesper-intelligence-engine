@@ -144,6 +144,17 @@ def render_pdf(markdown: str) -> bytes:
 
     def paragraph(text: str, size: float = 10, style: str = "", indent: float = 0,
                   height: float = 5.5, markup: bool = True, fill: bool = False) -> None:
+        """Write one left-aligned paragraph and move to the next line.
+
+        Args:
+            text (str): Line of report markdown.
+            size (float): Font size in points.
+            style (str): fpdf2 font style, "" or "B" or "I".
+            indent (float): Left indent in millimetres.
+            height (float): Line height in millimetres.
+            markup (bool): Whether to interpret bold and italic markup.
+            fill (bool): Whether to shade the paragraph background.
+        """
         pdf.set_font("Helvetica", style, size)
         pdf.set_x(pdf.l_margin + indent)
         body = _to_fpdf_markup(text) if markup else _latin1(text)

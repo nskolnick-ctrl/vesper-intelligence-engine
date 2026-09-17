@@ -297,9 +297,26 @@ def _keyword_overlap(text_a: str, text_b: str, min_shared: int = 2) -> bool:
     what that gap means in practice) — just a lowercased, stopword-
     filtered token intersection, which is enough to catch the bear
     case naming the same figures or terms the bull evidence cited.
+
+    Args:
+        text_a (str): First evidence string.
+        text_b (str): Second evidence string.
+        min_shared (int): Minimum number of shared keywords that counts as
+            overlap. Defaults to 2.
+
+    Returns:
+        bool: True if the two strings share at least ``min_shared`` keywords.
     """
 
     def tokens(text: str) -> set[str]:
+        """Split text into lowercased keywords, dropping stopwords and short words.
+
+        Args:
+            text (str): Text to tokenise.
+
+        Returns:
+            set[str]: The keyword set.
+        """
         words = "".join(ch if ch.isalnum() else " " for ch in text.lower()).split()
         return {w for w in words if w not in _OVERLAP_STOPWORDS and len(w) > 2}
 

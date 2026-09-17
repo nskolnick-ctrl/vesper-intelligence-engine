@@ -47,7 +47,19 @@ class ClaudeClient(Protocol):
     """Anything the analysis layer can send a prompt to."""
 
     def complete(self, system_prompt: str, user_prompt: str, model: str) -> str:
-        """Send one prompt and return the model's text reply."""
+        """Send one prompt and return the model's text reply.
+
+        Args:
+            system_prompt (str): System prompt for the call.
+            user_prompt (str): User prompt for the call.
+            model (str): Model alias or identifier.
+
+        Returns:
+            str: The reply text.
+
+        Raises:
+            AnalysisAPIError: If the call fails.
+        """
         ...
 
 

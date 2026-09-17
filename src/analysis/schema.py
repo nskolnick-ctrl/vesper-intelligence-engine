@@ -95,6 +95,11 @@ class AnalysisResult:
     caveats: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
+        """Return the result as a plain, JSON-serialisable dict.
+
+        Returns:
+            dict[str, Any]: One entry per schema field.
+        """
         return {
             "ticker": self.ticker,
             "analysis_date": self.analysis_date,
@@ -132,8 +137,17 @@ def _validate_against_spec(
 ) -> None:
     """Shared validation routine for both schemas.
 
-    Raises SchemaValidationError on the first problem found, naming
-    the field, what was expected, and what was received.
+    Args:
+        obj (dict[str, Any]): Parsed JSON to validate.
+        spec (dict): Field name to (allowed types, nullable, enum or None).
+        schema_name (str): Schema name used in error messages.
+
+    Returns:
+        None
+
+    Raises:
+        SchemaValidationError: On the first problem found, naming the field,
+            what was expected, and what was received.
     """
     if not isinstance(obj, dict):
         raise SchemaValidationError(
