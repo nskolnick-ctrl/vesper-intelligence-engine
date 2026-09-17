@@ -137,7 +137,7 @@ def test_end_to_end_ticker_in_report_out(tmp_path: Path):
     fake_claude.complete.side_effect = [json.dumps(ANALYSIS), json.dumps(BEAR)]
 
     with patch("src.pipeline.fetch_company_data", return_value=dict(DATA)), patch(
-        "src.analysis.engine.ClaudeCodeClient", return_value=fake_claude
+        "src.pipeline.ClaudeCodeClient", return_value=fake_claude
     ):
         code = main(["AAPL", "--output-dir", str(tmp_path), "--json"])
 

@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Any
 
 from src.analysis import run_full_analysis, run_full_analysis_with_bear_case
-from src.analysis.claude_runner import ClaudeClient
+from src.analysis.claude_runner import ClaudeClient, ClaudeCodeClient
 from src.analysis.engine import DEFAULT_MODEL, OverrideThresholdBreach
 from src.analysis.schema import AnalysisResult, BearCaseResult
 from src.data import fetch_company_data
@@ -139,6 +140,9 @@ class PipelineOutput:
         breaches (list[OverrideThresholdBreach]): Pre-committed thresholds
             the result fell below.
         model (str): Model alias or identifier used for the Claude calls.
+        run_metadata (dict[str, Any]): When the run happened and one audit
+            record per Claude call (see ClaudeCodeClient.calls). Empty call
+            list when a test double without call records was used.
     """
 
     data: dict[str, Any]
@@ -146,6 +150,7 @@ class PipelineOutput:
     bear_case: BearCaseResult
     breaches: list[OverrideThresholdBreach] = field(default_factory=list)
     model: str = DEFAULT_MODEL
+    run_metadata: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict of the whole run.
@@ -160,6 +165,7 @@ class PipelineOutput:
             "override_breaches": [dataclasses.asdict(b) for b in self.breaches],
             "input_data": self.data,
             "model": self.model,
+            "run_metadata": self.run_metadata,
         }
 
     def to_json(self) -> str:
@@ -198,13 +204,24 @@ def run_pipeline_full(
         ResponseParsingError: If a reply is not valid JSON.
         SchemaValidationError: If a reply fails schema validation.
     """
+    run_at = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    active_client = client if client is not None else ClaudeCodeClient()
     company_data = fetch_company_data(ticker)
     data_dict = company_data_to_dict(company_data)
     result, bear_case, breaches = run_full_analysis_with_bear_case(
-        data_dict, override_thresholds=override_thresholds, client=client, model=model
+        data_dict, override_thresholds=override_thresholds, client=active_client, model=model
     )
+    calls = getattr(active_client, "calls", [])
     return PipelineOutput(
-        data=data_dict, result=result, bear_case=bear_case, breaches=breaches, model=model
+        data=data_dict,
+        result=result,
+        bear_case=bear_case,
+        breaches=breaches,
+        model=model,
+        run_metadata={
+            "run_at": run_at,
+            "claude_calls": list(calls) if isinstance(calls, list) else [],
+        },
     )
 
 

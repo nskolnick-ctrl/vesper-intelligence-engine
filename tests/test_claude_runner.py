@@ -91,3 +91,16 @@ def test_max_turns_reached_is_an_error(found):
     with patch("src.analysis.claude_runner.subprocess.run", return_value=_completed(stdout)):
         with pytest.raises(AnalysisAPIError, match="error_max_turns"):
             ClaudeCodeClient().complete("s", "u", "sonnet")
+
+
+def test_successful_call_is_recorded_for_audit(found):
+    stdout = _envelope(modelUsage={"claude-sonnet-x-20260101": {"inputTokens": 10}})
+    client = ClaudeCodeClient()
+    with patch("src.analysis.claude_runner.subprocess.run", return_value=_completed(stdout)):
+        client.complete("s", "u", "sonnet")
+
+    [record] = client.calls
+    assert record["model_requested"] == "sonnet"
+    assert record["models_used"] == ["claude-sonnet-x-20260101"]
+    assert len(record["response_sha256"]) == 64
+    assert record["started_at"].endswith("+00:00")

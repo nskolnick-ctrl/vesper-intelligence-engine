@@ -15,12 +15,15 @@ string, so tests replace this class with a fake and never start a process.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import tempfile
-from typing import Any, Protocol
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Protocol
 
 from src.analysis.exceptions import AnalysisAPIError
 
@@ -55,6 +58,13 @@ class ClaudeCodeClient:
         executable (str | None): Path to the ``claude`` executable, or None to
             resolve it from VIE_CLAUDE_PATH or the PATH at call time.
         timeout_seconds (int): Seconds to wait for one reply before giving up.
+        calls (List[Dict[str, Any]]): One audit record per successful call:
+            UTC start time, model requested, exact model identifiers Claude
+            Code reports having used, duration, and a SHA-256 hash of the raw
+            reply. The model name alone can point at different underlying
+            versions over time, so these records are what make a change in
+            behaviour between two runs detectable, even when its cause cannot
+            be pinned down.
     """
 
     def __init__(
@@ -76,6 +86,7 @@ class ClaudeCodeClient:
             raise ValueError("timeout_seconds must be positive.")
         self.executable = executable
         self.timeout_seconds = timeout_seconds
+        self.calls: List[Dict[str, Any]] = []
 
     def resolve_executable(self) -> str:
         """Find the ``claude`` executable.
@@ -116,6 +127,8 @@ class ClaudeCodeClient:
                 that is not the expected result envelope.
         """
         executable = self.resolve_executable()
+        started_at = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+        clock = time.monotonic()
         command = [
             executable,
             "-p",
@@ -154,7 +167,17 @@ class ClaudeCodeClient:
         except OSError as exc:
             raise AnalysisAPIError(f"Claude Code could not be run: {exc}") from exc
 
-        return _extract_result_text(completed.stdout, completed.stderr, completed.returncode, model)
+        text = _extract_result_text(completed.stdout, completed.stderr, completed.returncode, model)
+        self.calls.append(
+            {
+                "started_at": started_at,
+                "model_requested": model,
+                "models_used": _models_used(completed.stdout),
+                "duration_seconds": round(time.monotonic() - clock, 1),
+                "response_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            }
+        )
+        return text
 
 
 def _extract_result_text(stdout: str, stderr: str, returncode: int, model: str) -> str:
@@ -195,6 +218,23 @@ def _extract_result_text(stdout: str, stderr: str, returncode: int, model: str) 
     if not isinstance(result_text, str) or not result_text.strip():
         raise AnalysisAPIError(f"Claude Code returned an empty reply (model '{model}').")
     return result_text
+
+
+def _models_used(stdout: str) -> List[str]:
+    """Read the exact model identifiers from Claude Code's result envelope.
+
+    Args:
+        stdout (str): Captured standard output of a successful call.
+
+    Returns:
+        List[str]: Model identifiers listed under ``modelUsage``, or an empty
+        list if the envelope does not include them.
+    """
+    try:
+        usage = json.loads(stdout).get("modelUsage")
+    except (json.JSONDecodeError, AttributeError):
+        return []
+    return sorted(usage) if isinstance(usage, dict) else []
 
 
 def _login_hint(text: str) -> str:
