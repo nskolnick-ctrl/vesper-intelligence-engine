@@ -177,6 +177,16 @@ def render_report(output: PipelineOutput, generated_on: date | None = None) -> s
         "",
     ]
 
+    override = output.bear_override
+    if override is not None and override.applied:
+        lines += [
+            "> **Verdict lowered by the case against.** The first analysis rated this "
+            f"**{VERDICT_LABELS.get(override.original_verdict, override.original_verdict)}**. "
+            f"The independent case against scored severity {override.severity} out of 5 while "
+            f"confidence was only {override.confidence} out of 10, so the verdict was lowered one level.",
+            "",
+        ]
+
     if data.get("sector") in FINANCIAL_SECTORS:
         lines += [
             "> **Framework warning.** This is a financial company. The VIE's measures "
@@ -237,6 +247,10 @@ def render_report(output: PipelineOutput, generated_on: date | None = None) -> s
         f"**What the positive view is assuming:** {_text(bear.bull_assumption_challenged)}",
         "",
         f"**What would prove the bear case wrong:** {_text(bear.what_would_change_this)}",
+        "",
+        f"**Severity of the case against:** {bear.bear_case_severity} out of 5"
+        if bear.bear_case_severity is not None
+        else f"**Severity of the case against:** {NOT_ASSESSED}",
         "",
         "## Key figures used",
         "",

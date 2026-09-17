@@ -173,3 +173,20 @@ def test_report_footer_shows_model_run_time_and_hashes():
     assert "sonnet (claude-sonnet-x)" in report
     assert "run at 2026-09-17T09:00:00+00:00" in report
     assert "reply hashes aaaaaaaaaa" in report
+
+
+def test_report_shows_bear_case_downgrade_and_severity():
+    from src.analysis.engine import BearCaseOverride
+
+    output = _output(verdict="moderate_quality", confidence=5)
+    output.bear_case.bear_case_severity = 4
+    output.bear_override = BearCaseOverride(
+        applied=True, original_verdict="high_quality", final_verdict="moderate_quality",
+        severity=4, confidence=5, reason="",
+    )
+
+    report = render_report(output, REPORT_DATE)
+
+    assert "Verdict lowered by the case against" in report
+    assert "rated this **High quality**" in report
+    assert "**Severity of the case against:** 4 out of 5" in report
