@@ -24,7 +24,7 @@ from src.analysis import (
     run_bear_case,
     run_full_analysis,
 )
-from src.analysis.engine import apply_bear_case_override
+from src.analysis.engine import apply_bear_case_override, decide_bear_case_override
 from src.analysis.schema import AnalysisResult, BearCaseResult
 
 VALID_ANALYSIS_JSON = (
@@ -46,7 +46,7 @@ VALID_BEAR_JSON = (
     '"bull_assumption_challenged": "That the sustained 46% gross margin '
     'reflects durable pricing power rather than one-off mix effects.", '
     '"what_would_change_this": "Margin holding through a full unit-growth '
-    'downturn."}'
+    'downturn.", "bear_case_severity": 3}'
 )
 
 
@@ -200,60 +200,57 @@ def _analysis_result(**overrides) -> AnalysisResult:
     return AnalysisResult(**base)
 
 
-def test_bear_case_override_downgrades_on_contested_evidence():
-    result = _analysis_result(confidence=5)
-    bear = BearCaseResult(
+def _bear(severity):
+    return BearCaseResult(
         bear_thesis="Margin strength may not be durable.",
         key_evidence="Unit growth has slowed while margin held.",
-        bull_assumption_challenged=(
-            "That the sustained 46% gross margin reflects durable pricing "
-            "power rather than one-off mix effects."
-        ),
+        bull_assumption_challenged="That the 46% gross margin reflects durable pricing power.",
         what_would_change_this="Margin holding through a downturn.",
+        bear_case_severity=severity,
     )
 
-    downgraded = apply_bear_case_override(result, bear)
 
+def test_bear_case_override_lowers_verdict_on_severe_case_and_modest_confidence():
+    result = _analysis_result(confidence=5, caveats=["a", "b", "c"])
+
+    decision = decide_bear_case_override(result, _bear(4))
+    downgraded = apply_bear_case_override(result, _bear(4))
+
+    assert decision.applied and decision.original_verdict == "high_quality"
     assert downgraded.verdict == "moderate_quality"
-    assert len(downgraded.caveats) == 1
-    assert "contests the evidence" in downgraded.caveats[0]
-    # original object must be untouched
-    assert result.verdict == "high_quality"
+    assert downgraded.caveats == ["a", "b", "c"]  # nothing truncated or hidden
+    assert result.verdict == "high_quality"  # original untouched
 
 
-def test_bear_case_override_no_downgrade_without_keyword_overlap():
-    result = _analysis_result(confidence=5)
-    bear = BearCaseResult(
-        bear_thesis="Supply chain concentration is the real risk.",
-        key_evidence="Single-region manufacturing exposure.",
-        bull_assumption_challenged="That geographic diversification is adequate.",
-        what_would_change_this="A second qualified manufacturing region.",
-    )
+def test_bear_case_override_ignores_severity_below_trigger():
+    # Day 9 regression: the old keyword trigger fired on shared vocabulary alone.
+    decision = decide_bear_case_override(_analysis_result(confidence=5), _bear(3))
 
-    unchanged = apply_bear_case_override(result, bear)
-
-    assert unchanged.verdict == "high_quality"
-    assert unchanged.caveats == []
+    assert not decision.applied
+    assert "below the trigger" in decision.reason
 
 
-def test_bear_case_override_no_downgrade_when_confidence_high():
-    # Same contested evidence as the downgrade test, but confidence > 6:
-    # the mechanism treats sufficiently high confidence as already
-    # having accounted for the contradiction.
-    result = _analysis_result(confidence=9)
-    bear = BearCaseResult(
-        bear_thesis="Margin strength may not be durable.",
-        key_evidence="Unit growth has slowed while margin held.",
-        bull_assumption_challenged=(
-            "That the sustained 46% gross margin reflects durable pricing "
-            "power rather than one-off mix effects."
-        ),
-        what_would_change_this="Margin holding through a downturn.",
-    )
+def test_bear_case_override_respects_high_confidence():
+    decision = decide_bear_case_override(_analysis_result(confidence=7), _bear(5))
 
-    unchanged = apply_bear_case_override(result, bear)
+    assert not decision.applied
+    assert decision.final_verdict == "high_quality"
 
-    assert unchanged.verdict == "high_quality"
+
+def test_bear_case_override_never_drops_low_quality_to_insufficient_data():
+    decision = decide_bear_case_override(_analysis_result(verdict="low_quality", confidence=3), _bear(5))
+
+    assert not decision.applied
+    assert decision.final_verdict == "low_quality"
+
+
+def test_bear_case_severity_out_of_range_fails_validation():
+    import json
+
+    obj = json.loads(VALID_BEAR_JSON)
+    obj["bear_case_severity"] = 9
+    with pytest.raises(SchemaValidationError, match="bear_case_severity"):
+        run_bear_case({"ticker": "AAPL"}, client=_client_returning(json.dumps(obj)))
 
 
 # --- correction 2: pre-committed override thresholds ------------------------

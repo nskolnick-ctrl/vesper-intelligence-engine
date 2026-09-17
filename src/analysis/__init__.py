@@ -12,6 +12,8 @@ the previous layer's validated output.
 
 from src.analysis.claude_runner import ClaudeClient, ClaudeCodeClient
 from src.analysis.engine import (
+    BearCaseOverride,
+    decide_bear_case_override,
     run_analysis,
     run_bear_case,
     run_full_analysis,
@@ -25,6 +27,8 @@ from src.analysis.exceptions import (
 )
 
 __all__ = [
+    "BearCaseOverride",
+    "decide_bear_case_override",
     "ClaudeClient",
     "ClaudeCodeClient",
     "run_full_analysis_with_bear_case",

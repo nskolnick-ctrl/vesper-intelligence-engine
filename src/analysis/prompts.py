@@ -95,12 +95,16 @@ BEAR_CASE_PROMPT_TEMPLATE = (
     "data does not support; and one thing that would have to be true, "
     "which is not currently visible in this data, for the bear case to "
     "be wrong.\n\n"
-    "Do not assign a numeric probability or severity score to this case. "
-    "State it as a reasoned argument only.\n\n"
+    "Then rate bear_case_severity from 1 to 5 using these anchors: 1 = "
+    "concerns any sound business would carry; 3 = a material risk that "
+    "should temper a positive view; 5 = the data points to a broken "
+    "business model or a solvency threat. Rate the evidence, not how "
+    "forcefully you argued it. Do not assign a probability.\n\n"
     "Respond with JSON: "
     '{"bear_thesis": string max 60 words, "key_evidence": string max 60 '
     'words, "bull_assumption_challenged": string max 60 words, '
-    '"what_would_change_this": string max 40 words}\n\n'
+    '"what_would_change_this": string max 40 words, '
+    '"bear_case_severity": integer 1-5}\n\n'
     "Company data:\n<<<DATA_JSON>>>"
 )
 

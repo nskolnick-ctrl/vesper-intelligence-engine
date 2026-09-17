@@ -69,6 +69,7 @@ BEAR_CASE_FIELDS: dict[str, tuple[tuple[type, ...], bool, frozenset[str] | None]
     "key_evidence": ((str,), False, None),
     "bull_assumption_challenged": ((str,), False, None),
     "what_would_change_this": ((str,), False, None),
+    "bear_case_severity": ((int,), False, None),
 }
 
 
@@ -120,14 +121,15 @@ class AnalysisResult:
 class BearCaseResult:
     """The validated 4-field bear case, as a typed object.
 
-    Deliberately has no severity or probability field: see the module
-    docstring above.
+    bear_case_severity (1-5) was added on Day 9 after the keyword-overlap
+    override proved unusable in stress testing; see OVERRIDE_MECHANISM_NOTE.
     """
 
     bear_thesis: str
     key_evidence: str
     bull_assumption_challenged: str
     what_would_change_this: str
+    bear_case_severity: int | None = None
 
 
 def _validate_against_spec(
@@ -192,6 +194,12 @@ def _validate_against_spec(
                 f"{schema_name}: field '{field_name}' value {value!r} is not "
                 f"one of the permitted values {sorted(enum)}."
             )
+
+    if schema_name == "BearCaseResult" and not 1 <= obj["bear_case_severity"] <= 5:
+        raise SchemaValidationError(
+            "BearCaseResult: field 'bear_case_severity' must be between 1 and 5, "
+            f"got {obj['bear_case_severity']}."
+        )
 
     if schema_name == "AnalysisResult":
         caveats = obj["caveats"]

@@ -15,7 +15,7 @@ Two corrections carried over from before Day 6, both resolved in this
 module:
 
 1. Bear case verdict-downgrade trigger (see OVERRIDE_MECHANISM_NOTE
-   and apply_bear_case_override below). The Day 4 design spec said a
+   and decide_bear_case_override below; replaced on Day 9). The Day 4 design spec said a
    downgrade triggers "when the bear case's risk score exceeds the
    bull verdict's confidence score", but the Day 3 bear case schema
    was deliberately built with no risk_score field (assigning the
@@ -263,107 +263,123 @@ def run_bear_case(
 
 # --- Correction 1: bear case override mechanism -----------------------------
 
+SEVERITY_TRIGGER = 4
+CONFIDENCE_CEILING = 6
+# A downgrade never moves a verdict into insufficient_data: that verdict means
+# "cannot judge", not "worse than low quality", so low_quality is the floor.
+_DOWNGRADE_FLOOR = "low_quality"
+
 OVERRIDE_MECHANISM_NOTE = (
-    "Original Day 4 spec (unimplementable as written): 'a verdict downgrade "
-    "triggers when the bear case's risk score exceeds the bull verdict's "
-    "confidence score' — BearCaseResult has no risk_score field, by the "
-    "Day 3 design decision not to assign the bear case a numeric severity. "
-    "Corrected mechanism: a downgrade triggers when (a) the bear case's "
-    "bull_assumption_challenged text overlaps, on a plain keyword basis, "
-    "with the specific evidence text the bull case relied on "
-    "(moat_evidence or financial_evidence) — i.e. the bear case is "
-    "contesting the exact evidence the verdict was built on, not a "
-    "tangential point — and (b) confidence is not high enough to treat "
-    "that contradiction as already accounted for (confidence <= 6). What "
-    "this does not catch: a bear case that contradicts the bull evidence "
-    "in substance but different wording will not overlap on a keyword "
-    "basis and will not trigger a downgrade. Catching that would need a "
-    "semantic-similarity check, which this module does not implement."
-)
-
-_OVERLAP_STOPWORDS = frozenset(
-    {
-        "the", "a", "an", "and", "or", "of", "to", "in", "on", "is", "are",
-        "was", "were", "this", "that", "with", "for", "as", "at", "by",
-        "from", "not", "no", "it", "its", "be", "than", "but",
-    }
+    "Day 9 mechanism (replaces the Day 6 keyword-overlap trigger). The bear "
+    "case call scores bear_case_severity from 1 to 5. A verdict is lowered "
+    "one level when severity is 4 or more AND the main analysis's confidence "
+    "is 6 or less. The confidence guard stops a moderately challenging bear "
+    "case overriding a genuinely high-conviction verdict. Why the keyword "
+    "trigger was removed: in the Day 9 stress test it fired for 9 of 10 "
+    "companies, because any two texts about the same company share words "
+    "like 'margin', 'revenue' and 'debt'. It was measuring shared vocabulary, "
+    "not contradiction, and it pushed 8 of 10 verdicts to low_quality. Its "
+    "downgrade note was also silently cut off whenever the caveats list was "
+    "already full. The thresholds are provisional and need testing against "
+    "the evaluation set."
 )
 
 
-def _keyword_overlap(text_a: str, text_b: str, min_shared: int = 2) -> bool:
-    """Plain keyword-overlap check between two short evidence strings.
+@dataclass
+class BearCaseOverride:
+    """The record of whether the bear case lowered the verdict, and why.
 
-    Not a semantic similarity check (see OVERRIDE_MECHANISM_NOTE for
-    what that gap means in practice) — just a lowercased, stopword-
-    filtered token intersection, which is enough to catch the bear
-    case naming the same figures or terms the bull evidence cited.
-
-    Args:
-        text_a (str): First evidence string.
-        text_b (str): Second evidence string.
-        min_shared (int): Minimum number of shared keywords that counts as
-            overlap. Defaults to 2.
-
-    Returns:
-        bool: True if the two strings share at least ``min_shared`` keywords.
+    Attributes:
+        applied (bool): Whether the verdict was lowered.
+        original_verdict (str): The main analysis verdict before any change.
+        final_verdict (str): The verdict after the rule was applied.
+        severity (int | None): The bear case severity score used.
+        confidence (int): The main analysis confidence used.
+        reason (str): Plain-English explanation of the decision.
     """
 
-    def tokens(text: str) -> set[str]:
-        """Split text into lowercased keywords, dropping stopwords and short words.
+    applied: bool
+    original_verdict: str
+    final_verdict: str
+    severity: int | None
+    confidence: int
+    reason: str
 
-        Args:
-            text (str): Text to tokenise.
 
-        Returns:
-            set[str]: The keyword set.
-        """
-        words = "".join(ch if ch.isalnum() else " " for ch in text.lower()).split()
-        return {w for w in words if w not in _OVERLAP_STOPWORDS and len(w) > 2}
+def decide_bear_case_override(
+    result: AnalysisResult, bear: BearCaseResult
+) -> BearCaseOverride:
+    """Decide whether the bear case should lower the verdict.
 
-    shared = tokens(text_a) & tokens(text_b)
-    return len(shared) >= min_shared
+    Args:
+        result (AnalysisResult): The validated main analysis result.
+        bear (BearCaseResult): The validated, independent bear case.
+
+    Returns:
+        BearCaseOverride: The decision and the reason for it.
+    """
+    severity = bear.bear_case_severity
+    keep = dict(
+        applied=False,
+        original_verdict=result.verdict,
+        final_verdict=result.verdict,
+        severity=severity,
+        confidence=result.confidence,
+    )
+    if severity is None:
+        return BearCaseOverride(**keep, reason="No severity score, so no override was considered.")
+    if severity < SEVERITY_TRIGGER:
+        return BearCaseOverride(
+            **keep, reason=f"Bear case severity {severity}/5 is below the trigger of {SEVERITY_TRIGGER}."
+        )
+    if result.confidence > CONFIDENCE_CEILING:
+        return BearCaseOverride(
+            **keep,
+            reason=(
+                f"Bear case severity {severity}/5 met the trigger, but confidence "
+                f"{result.confidence}/10 is above {CONFIDENCE_CEILING}, so the verdict stands."
+            ),
+        )
+    index = VERDICT_ORDER.index(result.verdict)
+    floor = VERDICT_ORDER.index(_DOWNGRADE_FLOOR)
+    if index <= floor:
+        return BearCaseOverride(
+            **keep, reason=f"Verdict is already {result.verdict}, so there is no lower level to move to."
+        )
+    new_verdict = VERDICT_ORDER[index - 1]
+    return BearCaseOverride(
+        applied=True,
+        original_verdict=result.verdict,
+        final_verdict=new_verdict,
+        severity=severity,
+        confidence=result.confidence,
+        reason=(
+            f"Bear case severity {severity}/5 with confidence only {result.confidence}/10, "
+            f"so the verdict was lowered from {result.verdict} to {new_verdict}."
+        ),
+    )
 
 
 def apply_bear_case_override(
     result: AnalysisResult, bear: BearCaseResult
 ) -> AnalysisResult:
-    """Apply the corrected bear-case-integration mechanism to a verdict.
+    """Return the result with the bear case override applied.
 
-    Never mutates `result`; returns a new AnalysisResult (or the same
-    values, if no override condition is met), so the caller always has
-    the original bull-only result available for audit if needed.
+    Never mutates `result`. The decision itself is recorded separately (see
+    decide_bear_case_override) rather than appended to caveats, so it can
+    never be cut off by the three-caveat limit.
 
     Args:
-        result: The validated main analysis result.
-        bear: The validated, independent bear case result.
+        result (AnalysisResult): The validated main analysis result.
+        bear (BearCaseResult): The validated, independent bear case.
 
     Returns:
-        AnalysisResult: `result`, or a one-tier-lower-verdict copy of
-        it with a caveat describing the contested assumption appended,
-        when the override condition is met.
+        AnalysisResult: `result`, or a copy with the verdict lowered one level.
     """
-    bull_evidence = " ".join(
-        filter(None, [result.moat_evidence, result.financial_evidence])
-    )
-    contradicts_bull_evidence = _keyword_overlap(
-        bear.bull_assumption_challenged, bull_evidence
-    )
-
-    if not contradicts_bull_evidence or result.confidence > 6:
+    decision = decide_bear_case_override(result, bear)
+    if not decision.applied:
         return result
-
-    current_index = VERDICT_ORDER.index(result.verdict)
-    new_index = max(current_index - 1, 0)
-    new_verdict = VERDICT_ORDER[new_index]
-
-    caveat = (
-        "Bear case contests the evidence behind this verdict "
-        f"(bull assumption challenged: {bear.bull_assumption_challenged!r}); "
-        "verdict downgraded pending review."
-    )
-    new_caveats = (result.caveats + [caveat])[:3]
-
-    return replace(result, verdict=new_verdict, caveats=new_caveats)
+    return replace(result, verdict=decision.final_verdict)
 
 
 # --- Correction 2: pre-committed override thresholds ------------------------
@@ -419,7 +435,7 @@ def run_full_analysis_with_bear_case(
     override_thresholds: dict[str, int] | None = None,
     client: ClaudeClient | None = None,
     model: str = DEFAULT_MODEL,
-) -> tuple[AnalysisResult, BearCaseResult, list[OverrideThresholdBreach]]:
+) -> tuple[AnalysisResult, BearCaseResult, list[OverrideThresholdBreach], BearCaseOverride]:
     """Run the full analysis and also return the bear case for reporting.
 
     Same pipeline as run_full_analysis. The bear case is returned as well
@@ -434,8 +450,9 @@ def run_full_analysis_with_bear_case(
         model (str): Model alias or identifier for both calls.
 
     Returns:
-        tuple[AnalysisResult, BearCaseResult, list[OverrideThresholdBreach]]:
-        The final result, the bear case, and any threshold breaches.
+        tuple[AnalysisResult, BearCaseResult, list[OverrideThresholdBreach], BearCaseOverride]:
+        The final result, the bear case, any threshold breaches, and the
+        record of whether the bear case lowered the verdict.
 
     Raises:
         AnalysisAPIError: If a Claude call fails.
@@ -445,9 +462,10 @@ def run_full_analysis_with_bear_case(
     active_client = client if client is not None else ClaudeCodeClient()
     bull_result = run_analysis(data, client=active_client, model=model)
     bear_result = run_bear_case(data, client=active_client, model=model)
+    decision = decide_bear_case_override(bull_result, bear_result)
     final_result = apply_bear_case_override(bull_result, bear_result)
     breaches = _check_override_thresholds(final_result, override_thresholds)
-    return final_result, bear_result, breaches
+    return final_result, bear_result, breaches, decision
 
 
 def run_full_analysis(
@@ -482,7 +500,7 @@ def run_full_analysis(
         ResponseParsingError: If a reply is not valid JSON.
         SchemaValidationError: If a reply fails schema validation.
     """
-    final_result, _, breaches = run_full_analysis_with_bear_case(
+    final_result, _, breaches, _ = run_full_analysis_with_bear_case(
         data, override_thresholds=override_thresholds, client=client, model=model
     )
     return final_result, breaches

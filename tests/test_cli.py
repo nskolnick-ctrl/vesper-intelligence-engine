@@ -30,6 +30,7 @@ BEAR = dict(
     bear_thesis="Margin could compress.", key_evidence="Slowing unit growth.",
     bull_assumption_challenged="That supply is diversified enough.",
     what_would_change_this="A second manufacturing region.",
+    bear_case_severity=3,
 )
 DATA = {"ticker": "AAPL", "company_name": "Apple Inc.", "price": 225.0, "gross_margin": 0.46,
         "as_of_date": "2026-09-15", "source": "yfinance"}

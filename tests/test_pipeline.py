@@ -36,7 +36,7 @@ VALID_ANALYSIS_JSON = (
 VALID_BEAR_JSON = (
     '{"bear_thesis": "Margin could compress.", "key_evidence": "Slowing '
     'unit growth.", "bull_assumption_challenged": "That margin reflects '
-    'durable pricing power.", "what_would_change_this": "A downturn test."}'
+    'durable pricing power.", "what_would_change_this": "A downturn test.", "bear_case_severity": 3}'
 )
 
 
