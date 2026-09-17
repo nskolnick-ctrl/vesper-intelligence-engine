@@ -55,7 +55,7 @@ def test_complete_never_passes_api_credentials(found, monkeypatch):
     with patch("src.analysis.claude_runner.subprocess.run", return_value=_completed(_envelope())) as run:
         ClaudeCodeClient().complete("s", "u", "sonnet")
 
-    assert "ANTHROPIC_API_KEY" not in run.call_args.kwargs["env"]
+    assert not any(k.startswith("ANTHROPIC_") for k in run.call_args.kwargs["env"])
 
 
 def test_missing_claude_code_raises_with_install_hint():

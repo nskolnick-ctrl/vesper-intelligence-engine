@@ -37,10 +37,12 @@ INSTALL_HINT = (
     "in a terminal to log in, then try again. If it is installed somewhere "
     f"unusual, set {CLAUDE_PATH_ENV_VAR} to the full path of the executable."
 )
-# Removed from the child process environment. If one of these is set, Claude
-# Code bills the call to that API key instead of the logged-in Claude account,
-# which is exactly what the VIE is designed never to do.
-_API_CREDENTIAL_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+# Every ANTHROPIC_* variable is removed from the child process environment.
+# If an Anthropic credential or endpoint override is set in the shell, Claude
+# Code bills or routes the call through it instead of the logged-in Claude
+# account, which is exactly what the VIE is designed never to do. Matching the
+# prefix covers every such variable without naming credentials in the code.
+_ANTHROPIC_ENV_PREFIX = "ANTHROPIC_"
 
 
 class ClaudeClient(Protocol):
@@ -156,7 +158,7 @@ class ClaudeCodeClient:
             "--max-turns",
             str(MAX_TURNS),
         ]
-        env = {k: v for k, v in os.environ.items() if k not in _API_CREDENTIAL_ENV_VARS}
+        env = {k: v for k, v in os.environ.items() if not k.startswith(_ANTHROPIC_ENV_PREFIX)}
 
         try:
             with tempfile.TemporaryDirectory(prefix="vie-claude-") as workdir:
