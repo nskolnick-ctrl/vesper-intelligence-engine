@@ -103,6 +103,27 @@ python3 scripts/generate_outputs.py AAPL NVDA  # your own list
 Writes validated JSON to `tests/outputs/`, which `tests/test_saved_outputs.py`
 re-checks against the schemas.
 
+## Stress test (Day 9)
+
+```bash
+python3 scripts/stress_test.py                    # all ten companies, 15-25 minutes
+python3 scripts/stress_test.py --only BARC.L FIG  # rerun a subset
+```
+
+Runs ten companies chosen to break the VIE (large US tech, mid-size UK, limited
+data, recent IPO, negative earnings, niche sector, a bank and a brand-led
+business). A failure is recorded, not a crash. Reports, JSON and a results
+table with blank Day 4 rubric columns are written to `reports/stress_test/`.
+
+## Audit trail
+
+Every run records when it happened, the exact Claude model identifiers that
+answered, and a SHA-256 hash of each raw reply. They appear in the JSON
+(`run_metadata`) and in the report footer. The model alias alone can point at
+different underlying versions over time, so if the same ticker gives a different
+verdict on the same data, comparing these records shows whether the model
+changed even when the cause cannot be pinned down.
+
 ## Using the layers from Python
 
 ```python
@@ -117,7 +138,14 @@ print(data.gross_margin, data.as_of_date)
 `fetch_company_data` raises `DataFetchError` when the source call fails or the
 ticker is unusable, and `DataValidationError` when a returned field cannot be
 true, such as a negative share price. Any field the source does not supply is
-set to `None`, never to zero, and the report shows it as "Not available".
+set to `None`, never to zero, and the report shows it as "Not available". A
+gross margin of exactly zero alongside a positive operating margin is impossible,
+so it is also treated as missing (this is how banks come back from the source).
+
+London share prices are quoted in pence (`GBp`) while accounts are in pounds
+(`GBP`); both currencies are recorded and labelled in the report. Financial
+companies get a framework warning, because gross margin and total debt do not
+describe a bank or insurer.
 
 ## Environment variables
 
