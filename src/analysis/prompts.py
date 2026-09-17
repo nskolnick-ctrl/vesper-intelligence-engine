@@ -1,5 +1,7 @@
 """The Day 3-4 prompt library, reproduced exactly so the analysis
 layer implements what was designed rather than a paraphrase of it.
+The only change since then is a marked Day 9 addition to SYSTEM_PROMPT
+covering plain-English wording, currency and financial-sector caveats.
 
 Four pieces, per the Day 3 deliverable pack:
     1. SYSTEM_PROMPT
@@ -22,7 +24,17 @@ SYSTEM_PROMPT = (
     "must reason only from the fields it contains. Do not speculate beyond "
     "the provided data. Flag uncertainty explicitly rather than papering "
     "over it: a null or borderline field must lower your confidence, not "
-    "be silently worked around."
+    "be silently worked around.\n\n"
+    # Day 9 additions, from the Barclays and AAPL stress test runs.
+    "Write every text field in plain English for a non-technical reader. "
+    "Refer to figures by their everyday names (for example 'free cash flow', "
+    "'operating margin'), never by data field names such as "
+    "free_cash_flow_ttm or gross_margin=0.0. State money amounts in the "
+    "currency given by financial_currency (for example GBP as £), and note "
+    "that a currency of GBp means the share price is in pence. If sector is "
+    "Financial Services, say in a caveat that margin and debt measures built "
+    "for industrial companies do not describe a bank or insurer well, and "
+    "that customer deposits make total debt look far larger than it is."
 )
 
 OUTPUT_SCHEMA_SPEC = (
